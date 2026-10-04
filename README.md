@@ -1,10 +1,16 @@
-# PropCopy
+# PropCopy - Open-Source MetaTrader Trade Copier for Prop Firm Traders
 
-A fast, self-hosted trade copier for MetaTrader. It watches one **source** account and replicates
-its trades to any number of **follower** accounts, with per-follower sizing, execution tuning,
-and a local web dashboard with trade analytics.
+**PropCopy is a free, self-hosted trade copier for MetaTrader 5 (MT5) and MetaTrader 4 (MT4), written in Python.**
+It watches one source account and copies its trades to any number of follower accounts in about
+10 ms, with per-account lot scaling, execution controls, and a local web dashboard with trade
+analytics. It runs on your own Windows PC or VPS, so your broker credentials never leave your machine.
 
-Everything runs on your own machine or VPS. Your broker credentials never leave it.
+Typical uses: copying one trading account to several prop firm challenge or funded accounts,
+mirroring a master account to followers with different lot sizes, and tuning copies with price
+offsets, SL/TP multipliers, and profit-target auto-close.
+
+**Keywords:** trade copier, copy trading, MT5 trade copier, MT4 trade copier, MetaTrader copier,
+prop firm, forex, local copier, multi-account, Python, FastAPI, open source.
 
 > **Warning: trading is risky, and copy trading may violate your prop firm's rules.**
 > Read [DISCLAIMER.md](DISCLAIMER.md) before connecting any real or funded account.
@@ -171,3 +177,27 @@ names, or logs containing them.
 ## License
 
 [MIT](LICENSE). See also [DISCLAIMER.md](DISCLAIMER.md).
+
+## FAQ
+
+**What is PropCopy?**
+An open-source local trade copier. It reads the positions on a source MetaTrader account and
+replicates opens, closes, and SL/TP changes onto follower accounts.
+
+**Does it work with MT4 and MT5?**
+Yes. MT5 through the official `MetaTrader5` Python package, MT4 through the bundled
+`PropCopy_Bridge.mq4` Expert Advisor. Windows only.
+
+**Is it a cloud copier? Does it see my passwords?**
+No. It runs entirely on your own machine or VPS. Credentials are stored locally in plain text
+in git-ignored YAML files.
+
+**Can I copy to accounts at different brokers?**
+Yes. Each account uses its own terminal installation, and `symbol_map` translates instrument
+names that differ between brokers (for example `GER40.cash` to `DAX40`).
+
+**Is copy trading allowed by my prop firm?**
+Many firms restrict or ban it. Check your firm's rules first. See [DISCLAIMER.md](DISCLAIMER.md).
+
+**Is it free?**
+Yes, under the [MIT License](LICENSE).
