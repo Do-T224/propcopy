@@ -11,6 +11,27 @@ slaves:
   mt5_path: C:\Program Files\MetaTrader 5 Second
   platform: mt5
   size_scaler: 1.0
+
+# -- Optional: futures follower (NinjaTrader) -------------------------------
+# Copies the source's XAUUSD trades to a NinjaTrader 8 account as MGC/GC futures.
+# `account` is any unique integer id; the real NinjaTrader account name goes in
+# `account_name`. See docs/NINJATRADER_SETUP.md. Uncomment to use.
+#
+# - account: 3
+#   platform: ninjatrader
+#   account_name: "Sim101"             # exact NinjaTrader account name
+#   nt_server_port: 36973              # NinjaTrader Options -> ATI -> Server port
+#   nt_host: 127.0.0.1                 # not "localhost"
+#   nt_instrument_mode: explicit
+#   symbol_map: { XAUUSD: MGC }        # MGC (micro) or GC
+#   size_scaler: 1.0
+#   sltp_multiplier: 1.0
+#   small_leg_policy: merge            # merge | skip_strict | floor_1
+#   merge_window_s: 300
+#   hard_contract_cap: 50
+#   setup_allowlist: ["*"]             # "*" = copy every trade; or a list of comment tags
+#   max_drawdown_pct: 0
+#   profit_target_usd: 0               # absolute equity level, 0 = off
 settings:
   check_interval: 0.01
   slave_queue_timeout: 0.01

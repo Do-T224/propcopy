@@ -407,6 +407,8 @@ function configForm() {
         accounts: [],
         masterTag: '',
         slaveTags: [],  // [{account_tag, size_scaler}]
+        futuresFollowers: [],  // [{account, platform, account_name, symbol_map, size_scaler, ...}] (ninjatrader)
+        showFutures: true,
         editingAccount: null,  // null or {tag, account, password, server, mt5_path, _isNew}
         showEditPw: false,
         saveStatus: '',
@@ -425,6 +427,20 @@ function configForm() {
                 ]);
                 this.config = await configRes.json();
                 this.accounts = await accountsRes.json();
+                // Futures followers (ninjatrader) are not in the accounts library; a few
+                // knobs are editable here, identity stays in config.yaml.
+                this.futuresFollowers = (this.config.slaves || [])
+                    .filter(s => s.platform === 'ninjatrader')
+                    .map(s => ({
+                        account: s.account,
+                        platform: s.platform,
+                        account_name: s.account_name || '',
+                        symbol_map: s.symbol_map || {},
+                        size_scaler: s.size_scaler ?? 1.0,
+                        sltp_multiplier: s.sltp_multiplier ?? 1.0,
+                        max_drawdown_pct: s.max_drawdown_pct ?? 0,
+                        profit_target_usd: s.profit_target_usd ?? 0,
+                    }));
                 // Unpack stagger_ms array into separate fields for UI
                 const sm = this.config.settings.stagger_ms || [0, 0];
                 this.config.settings.stagger_ms_min = sm[0] || 0;
@@ -450,8 +466,9 @@ function configForm() {
                     const match = this.accounts.find(a => a.account === this.config.master.account);
                     if (match) newMasterTag = match.tag;
                 }
-                if (!newSlaveTags.length && this.config.slaves.length) {
-                    newSlaveTags = this.config.slaves.map(s => {
+                const mtSlaves = this.config.slaves.filter(s => s.platform !== 'ninjatrader');
+                if (!newSlaveTags.length && mtSlaves.length) {
+                    newSlaveTags = mtSlaves.map(s => {
                         const match = this.accounts.find(a => a.account === s.account);
                         return {
                             account_tag: match ? match.tag : '',
@@ -602,6 +619,13 @@ function configForm() {
             const payload = {
                 master_tag: this.masterTag,
                 slaves: this.slaveTags.filter(s => s.account_tag),
+                futures_followers: this.futuresFollowers.map(f => ({
+                    account: f.account,
+                    size_scaler: f.size_scaler,
+                    sltp_multiplier: f.sltp_multiplier,
+                    max_drawdown_pct: f.max_drawdown_pct,
+                    profit_target_usd: f.profit_target_usd,
+                })),
                 settings: settings,
                 data: this.config.data,
             };

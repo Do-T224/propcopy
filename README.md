@@ -25,6 +25,8 @@ prop firm, forex, local copier, multi-account, Python, FastAPI, open source.
 - Per-follower execution options: price offset (better entry or slippage guard), volume jitter,
   SL/TP offset and multiplier, invert (flip direction), profit-target auto-close
 - MT5 (via the `MetaTrader5` Python package) and MT4 (via a bundled EA bridge)
+- **MT5 -> NinjaTrader futures:** copy XAUUSD trades to Micro Gold (MGC) or Gold (GC) on a
+  NinjaTrader 8 account (simulator-tested; see [docs/NINJATRADER_SETUP.md](docs/NINJATRADER_SETUP.md))
 - Local dashboard (native window or browser): live status over WebSocket, account manager,
   trade history
 - Analytics: MFE/MAE, exit efficiency, entry/exit timing, SL/TP hit rate, streak and tilt
@@ -130,6 +132,20 @@ Per-follower options:
 
 See `config.example.yaml` for global settings (polling interval, magic number, retries, deviation).
 
+### NinjaTrader futures follower
+
+PropCopy can also copy the source's **XAUUSD** trades onto a **NinjaTrader 8** account as **MGC**
+(micro) or **GC** futures, through NinjaTrader's Automated Trading Interface. NinjaTrader must be
+running on the same PC. Install the extra dependency and add a `platform: ninjatrader` entry to
+`slaves:` in `config.yaml`:
+
+```powershell
+pip install -r requirements-ninjatrader.txt
+```
+
+Full setup, sizing rules and limits: [docs/NINJATRADER_SETUP.md](docs/NINJATRADER_SETUP.md).
+This follower has only been tested against the NinjaTrader simulator.
+
 ### MT4 followers or source
 
 1. Copy `mt4_ea/PropCopy_Bridge.mq4` into the MT4 terminal's `MQL4/Experts` folder and compile it.
@@ -162,6 +178,9 @@ iscc installer.iss       # optional: Inno Setup installer into installer_output\
 
 ## Troubleshooting
 
+- **NinjaTrader follower shows disconnected:** NinjaTrader must be open and connected, with
+  *AT Interface* enabled and the port matching `nt_server_port`. See
+  [docs/NINJATRADER_SETUP.md](docs/NINJATRADER_SETUP.md).
 - **Account fails to log in:** check the `server` name matches the terminal's server list exactly,
   and that the terminal at `mt5_path` has *Allow algorithmic trading* on.
 - **Nothing is copied:** confirm the source account actually trades from the terminal in
@@ -191,6 +210,10 @@ Yes. MT5 through the official `MetaTrader5` Python package, MT4 through the bund
 **Is it a cloud copier? Does it see my passwords?**
 No. It runs entirely on your own machine or VPS. Credentials are stored locally in plain text
 in git-ignored YAML files.
+
+**Can it copy MT5 trades to NinjaTrader or futures accounts?**
+Yes, for gold: XAUUSD on the source becomes MGC or GC futures on a NinjaTrader 8 account. It is
+simulator-tested only. See [docs/NINJATRADER_SETUP.md](docs/NINJATRADER_SETUP.md).
 
 **Can I copy to accounts at different brokers?**
 Yes. Each account uses its own terminal installation, and `symbol_map` translates instrument

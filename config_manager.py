@@ -1,9 +1,16 @@
 """YAML-based configuration manager for PropCopy."""
 
+import logging
 import os
 from copy import deepcopy
 
 import yaml
+
+logger = logging.getLogger("config")
+
+# Follower platforms handled by the futures framework (followers/).
+FUTURES_PLATFORMS = {"ninjatrader"}
+_FUTURES_ROOTS = {"MGC", "GC"}
 
 
 DEFAULT_CONFIG = {
@@ -61,7 +68,60 @@ def load_config(path: str = "config.yaml") -> dict:
     for key in config:
         if key not in merged:
             merged[key] = config[key]
+
+    for problem in validate_followers(merged):
+        logger.warning("config: %s", problem)
+
     return merged
+
+
+def validate_followers(config: dict) -> list[str]:
+    """Check futures follower entries (`platform: ninjatrader`).
+
+    Returns human-readable problems; an empty list means OK. MT5/MT4 followers
+    are ignored.
+    """
+    problems: list[str] = []
+    seen_accounts: dict = {}
+
+    for idx, slave in enumerate(config.get("slaves") or []):
+        platform = slave.get("platform", "mt5")
+        if platform not in FUTURES_PLATFORMS:
+            continue
+        where = f"slave[{idx}] ({platform})"
+
+        acct = slave.get("account")
+        if not isinstance(acct, int):
+            problems.append(f"{where}: 'account' must be an int (local follower id), got {acct!r}")
+        elif acct in seen_accounts:
+            problems.append(f"{where}: duplicate account id {acct} (also {seen_accounts[acct]})")
+        else:
+            seen_accounts[acct] = where
+
+        if not slave.get("account_name"):
+            problems.append(f"{where}: 'account_name' is required (the exact NinjaTrader account name)")
+
+        symbol_map = slave.get("symbol_map") or {}
+        if not symbol_map:
+            problems.append(f"{where}: 'symbol_map' is required (e.g. {{XAUUSD: MGC}})")
+        else:
+            bad = sorted({v for v in symbol_map.values() if str(v).upper() not in _FUTURES_ROOTS})
+            if bad:
+                problems.append(f"{where}: symbol_map targets not in {sorted(_FUTURES_ROOTS)}: {bad}")
+
+        if "setup_allowlist" in slave and not slave["setup_allowlist"]:
+            problems.append(f"{where}: 'setup_allowlist' is empty, so nothing would be copied (use ['*'] for all)")
+
+        policy = slave.get("small_leg_policy", "merge")
+        if policy not in ("merge", "skip_strict", "floor_1"):
+            problems.append(f"{where}: unknown small_leg_policy {policy!r}")
+
+        if slave.get("nt_transport", "ati") not in ("ati", "addon"):
+            problems.append(f"{where}: nt_transport must be 'ati' or 'addon'")
+        if slave.get("nt_instrument_mode", "explicit") not in ("explicit", "front_month"):
+            problems.append(f"{where}: nt_instrument_mode must be 'explicit' or 'front_month'")
+
+    return problems
 
 
 def save_config(config: dict, path: str = "config.yaml") -> None:

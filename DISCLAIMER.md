@@ -34,6 +34,14 @@ terms.** Using this tool may violate them and may result in forfeited profits or
 termination. Features such as `invert` (opposite-direction copies) may be specifically
 prohibited by your firm.
 
+## NinjaTrader and futures
+The NinjaTrader follower (`platform: ninjatrader`) has been tested **only against the NinjaTrader
+simulator**, never on a live or funded futures account. Futures are leveraged, contracts are whole
+numbers (so copied size is rounded), and a stopped or disconnected NinjaTrader copies nothing while
+the source keeps trading. Many futures prop firms prohibit or restrict automation, the Automated
+Trading Interface, or copying from an external account. Confirm your firm's rules first. NinjaTrader
+is a trademark of NinjaTrader, LLC; this project is not affiliated with it.
+
 ## Credentials are stored locally in plain text
 Account numbers, passwords, and server names are saved unencrypted in `config.yaml` and
 `accounts.yaml` on your machine. Anyone with access to those files can log in to your trading

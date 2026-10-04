@@ -141,6 +141,11 @@ async def update_config(request: Request):
             slave_entry["account"] = int(slave_entry.get("account", 0))
             slave_entry["size_scaler"] = size_scaler
             slave_entry["platform"] = slave_entry.get("platform", "mt5")
+            if slave_entry["platform"] in ("ninjatrader",):
+                # Futures follower: its schema lives in config.yaml. Pass the whole
+                # entry through untouched so symbol_map / nt_* settings survive a save.
+                resolved_slaves.append(slave_entry)
+                continue
             if slave_entry["platform"] == "mt4":
                 slave_entry["mt4_port"] = int(slave_entry.get("mt4_port", 15555))
             if max_drawdown_pct > 0:
@@ -162,7 +167,31 @@ async def update_config(request: Request):
             if invert:
                 slave_entry["invert"] = True
             resolved_slaves.append(slave_entry)
+
+    # Futures followers (platform: ninjatrader) are not in the accounts library;
+    # identity and routing live in config.yaml. The dashboard can edit a few knobs
+    # ("futures_followers" in the PUT); everything else on disk is preserved.
+    _fut_edits = {int(f["account"]): f for f in body.get("futures_followers", []) if f.get("account") is not None}
+    _posted_accounts = {s.get("account") for s in resolved_slaves}
+    try:
+        _existing = load_config(CONFIG_PATH)
+    except Exception:
+        _existing = {}
+    for s in _existing.get("slaves", []):
+        if s.get("platform") not in ("ninjatrader",):
+            continue
+        if s.get("account") in _posted_accounts:
+            continue
+        s = dict(s)
+        edit = _fut_edits.get(s.get("account"))
+        if edit:
+            for key in ("size_scaler", "sltp_multiplier", "max_drawdown_pct", "profit_target_usd"):
+                if key in edit:
+                    s[key] = float(edit[key])
+        resolved_slaves.append(s)
+
     body["slaves"] = resolved_slaves
+    body.pop("futures_followers", None)
 
     # Store which tags are assigned (for UI to reload selections)
     body["_master_tag"] = master_tag

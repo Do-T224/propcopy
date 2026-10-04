@@ -5,12 +5,17 @@ import multiprocessing
 import queue
 import time
 
+from followers.executor import futures_executor_process
 from log_manager import start_log_listener
 from master_monitor import master_monitor_process
 from slave_executor import slave_executor_process
 from trade_mapping import TradeMapping
 
 logger = logging.getLogger("coordinator")
+
+# Follower platforms routed through the futures framework (followers/) instead of
+# the MT5/MT4 slave_executor path.
+FUTURES_PLATFORMS = {"ninjatrader"}
 
 
 class SubprocessCopyTrader:
@@ -69,12 +74,18 @@ class SubprocessCopyTrader:
         settings_for_processes = {
             **self.settings,
             "analytics_file": self.data_settings.get("analytics_file", "data/analytics.json"),
+            "followers_data_dir": self.data_settings.get("followers_data_dir", "data/followers"),
         }
 
         # Start slave processes first
         for i, slave_config in enumerate(self.slave_configs):
+            target = (
+                futures_executor_process
+                if slave_config.get("platform") in FUTURES_PLATFORMS
+                else slave_executor_process
+            )
             p = multiprocessing.Process(
-                target=slave_executor_process,
+                target=target,
                 args=(
                     slave_config,
                     self.slave_queues[i],
@@ -237,6 +248,17 @@ class SubprocessCopyTrader:
 
             elif msg_type == "MASTER_RESUMED":
                 self.state["master"]["suspended"] = False
+
+            elif msg_type == "ROUTE_SKIP":
+                # Emitted when a source trade is not copied to a follower (tag not
+                # allowed, backend disconnected, sub-minimum contract, ...). Kept
+                # as a rolling feed; the most common futures failure (NinjaTrader
+                # not running) shows up here.
+                self.state.setdefault("route_skips", []).append({
+                    "time": time.time(),
+                    **data,
+                })
+                self.state["route_skips"] = self.state["route_skips"][-50:]
 
             elif msg_type == "SLAVE_STATUS":
                 # Update or add slave in state

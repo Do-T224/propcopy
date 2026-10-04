@@ -1,0 +1,3 @@
+# Needed only for `platform: ninjatrader` followers (Windows).
+-r requirements.txt
+pythonnet>=3.0
