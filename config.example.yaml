@@ -1,0 +1,31 @@
+master:
+  account: 12345678
+  password: your_password
+  server: YourBroker-Server
+  mt5_path: C:\Program Files\MetaTrader 5
+  platform: mt5
+slaves:
+- account: 87654321
+  password: your_password
+  server: YourBroker-Server
+  mt5_path: C:\Program Files\MetaTrader 5 Second
+  platform: mt5
+  size_scaler: 1.0
+settings:
+  check_interval: 0.01
+  slave_queue_timeout: 0.01
+  magic_number: 240001
+  max_deviation: 20
+  max_open_retries: 1
+  max_close_retries: 2
+  retry_delay: 0.005
+  balance_report_interval: 30
+  balance_change_threshold: 0.01
+  max_reconnect_attempts: 5
+  setups: []
+  stagger_ms:
+  - 0
+  - 0
+data:
+  mapping_file: data/trade_mapping.json
+  analytics_file: data/analytics.json

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Config with credentials
+config.yaml
+accounts.yaml
+
+# Runtime data
+data/
+
+# Logs
+*.log
+
+# PyInstaller build artifacts
+*.manifest
+installer_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test / tooling
+.pytest_cache/
+.venv/
+venv/
+*.tmp
+
+# Local-only secrets and state
+data/license.json

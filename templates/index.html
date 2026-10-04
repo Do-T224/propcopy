@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropCopy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 800: '#1a1a2e', 900: '#0f0f23', 700: '#252547' }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="bg-dark-900 text-gray-200 min-h-screen" x-data="app()" x-init="init()">
+
+    <!-- Top Nav -->
+    <nav class="bg-dark-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-bold text-white">PropCopy</h1>
+            <span class="text-xs text-gray-500">Trade Copier</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" :class="state.engine_running ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></div>
+                <span class="text-sm" x-text="state.engine_running ? 'Running' : 'Stopped'"></span>
+            </div>
+            <span class="text-xs text-gray-500" x-show="state.engine_running" x-text="'Uptime: ' + uptime"></span>
+        </div>
+    </nav>
+
+    <!-- Tab Navigation -->
+    <div class="bg-dark-800 border-b border-gray-700 px-6">
+        <div class="flex gap-1">
+            <template x-for="tab in ['Status', 'Positions', 'History', 'Analytics', 'Config', 'Logs']">
+                <button @click="activeTab = tab"
+                    class="px-4 py-2 text-sm rounded-t transition-colors"
+                    :class="activeTab === tab ? 'bg-dark-900 text-white border-t border-x border-gray-700' : 'text-gray-400 hover:text-gray-200'">
+                    <span x-text="tab"></span>
+                </button>
+            </template>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-6 py-6">
+
+        <!-- STATUS TAB -->
+        <div x-show="activeTab === 'Status'" x-cloak>
+            <!-- Engine Controls -->
+            <div class="flex gap-3 mb-6">
+                <button @click="startEngine()" :disabled="state.engine_running"
+                    class="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded font-medium text-sm transition-colors">
+                    Start Engine
+                </button>
+                <button @click="confirmStop()" :disabled="!state.engine_running"
+                    class="px-6 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded font-medium text-sm transition-colors">
+                    Stop Engine
+                </button>
+            </div>
+
+            <!-- Accounts Table -->
+            <div class="bg-dark-800 rounded-lg border border-gray-700 overflow-hidden mb-6">
+                <table class="w-full text-sm">
+                    <thead class="bg-dark-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Account</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Balance</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Equity</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide"
+                                x-show="(state.slaves || []).some(s => s.max_drawdown_pct > 0)">Drawdown</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide"
+                                x-show="(state.slaves || []).some(s => s.profit_target_usd > 0)">Profit Target</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wide">Status</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wide">Latency</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wide"
+                                x-show="state.engine_running">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Source row -->
+                        <tr class="border-t border-gray-700/50 bg-blue-950/20"
+                            :class="state.master?.suspended ? 'opacity-60' : ''">
+                            <td class="px-4 py-3">
+                                <p class="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-0.5">Source</p>
+                                <p class="font-bold text-white" x-text="state.master?.account || '—'"></p>
+                                <p x-show="state.master?.account_tag" class="text-xs text-gray-500 mt-0.5" x-text="state.master?.account_tag"></p>
+                            </td>
+                            <td class="px-4 py-3 text-right text-white" x-text="'$' + (state.master?.balance?.toFixed(2) || '0.00')"></td>
+                            <td class="px-4 py-3 text-right">
+                                <p class="text-white" x-text="'$' + (state.master?.equity?.toFixed(2) || '0.00')"></p>
+                                <p class="text-xs text-gray-500 mt-0.5" x-text="(state.master?.open_positions || 0) + ' open'"></p>
+                            </td>
+                            <td class="px-4 py-3 text-right text-gray-600"
+                                x-show="(state.slaves || []).some(s => s.max_drawdown_pct > 0)">—</td>
+                            <td class="px-4 py-3 text-gray-600"
+                                x-show="(state.slaves || []).some(s => s.profit_target_usd > 0)">—</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-xs font-bold bg-blue-900 text-blue-300"
+                                      x-text="state.master?.suspended ? 'PAUSED' : 'SOURCE'">
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-right text-gray-600">—</td>
+                            <td class="px-4 py-3 text-center" x-show="state.engine_running">
+                                <button @click.stop="toggleAccount(state.master?.account)"
+                                    class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
+                                    :class="state.master?.suspended ? 'bg-gray-600' : 'bg-green-600'">
+                                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
+                                          :class="state.master?.suspended ? 'translate-x-1' : 'translate-x-[18px]'"></span>
+                                </button>
+                            </td>
+                        </tr>
+                        <!-- Follower rows -->
+                        <template x-for="slave in state.slaves || []" :key="slave.account">
+                            <tr class="border-t border-gray-700/50 hover:bg-dark-700/30 transition-colors"
+                                :class="slave.suspended ? 'opacity-60' : ''">
+                                <td class="px-4 py-3">
+                                    <div class="mb-0.5">
+                                        <span class="px-1.5 py-0.5 rounded text-xs font-medium"
+                                              :class="slave.platform === 'mt4' ? 'bg-amber-900 text-amber-300' : 'bg-blue-900 text-blue-300'"
+                                              x-text="(slave.platform || 'MT5').toUpperCase()"></span>
+                                    </div>
+                                    <p class="font-bold text-white" x-text="slave.account"></p>
+                                    <p x-show="slave.account_tag" class="text-xs text-gray-500 mt-0.5" x-text="slave.account_tag"></p>
+                                </td>
+                                <td class="px-4 py-3 text-right text-white" x-text="'$' + (slave.balance?.toFixed(2) || '0.00')"></td>
+                                <td class="px-4 py-3 text-right text-white" x-text="'$' + (slave.equity?.toFixed(2) || '0.00')"></td>
+                                <td class="px-4 py-3 text-right"
+                                    x-show="(state.slaves || []).some(s => s.max_drawdown_pct > 0)">
+                                    <span x-show="slave.max_drawdown_pct > 0 && !slave.guardian_active"
+                                          :class="(slave.current_drawdown_pct / slave.max_drawdown_pct) >= 0.8 ? 'text-red-400' :
+                                                  (slave.current_drawdown_pct / slave.max_drawdown_pct) >= 0.5 ? 'text-yellow-400' : 'text-white'"
+                                          x-text="(slave.current_drawdown_pct?.toFixed(2) || '0.00') + '% / ' + slave.max_drawdown_pct + '%'"></span>
+                                    <span x-show="!slave.max_drawdown_pct || slave.guardian_active" class="text-gray-600">—</span>
+                                </td>
+                                <td class="px-4 py-3"
+                                    x-show="(state.slaves || []).some(s => s.profit_target_usd > 0)">
+                                    <span x-show="slave.profit_target_usd > 0 && !slave.profit_target_hit"
+                                          class="flex items-center gap-2">
+                                        <span class="text-xs text-gray-300"
+                                              x-text="'$' + (slave.equity?.toFixed(0) || '0') + ' / $' + (slave.profit_target_usd?.toFixed(0) || '0')"></span>
+                                        <button @click="toggleProfitTarget(slave.account, !slave.profit_target_active)"
+                                            class="px-2 py-0.5 rounded text-xs font-medium transition-colors"
+                                            :class="slave.profit_target_active ? 'bg-green-700 text-green-200 hover:bg-green-600' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'"
+                                            x-text="slave.profit_target_active ? 'On' : 'Off'">
+                                        </button>
+                                    </span>
+                                    <span x-show="slave.profit_target_usd > 0 && slave.profit_target_hit"
+                                          class="text-xs font-bold text-green-400">DONE ✓</span>
+                                    <span x-show="!slave.profit_target_usd || slave.profit_target_usd <= 0"
+                                          class="text-gray-600">—</span>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                          :class="slave.profit_target_hit ? 'bg-green-900 text-green-300' :
+                                                  slave.guardian_active ? 'bg-red-900 text-red-300 animate-pulse' :
+                                                  slave.suspended ? 'bg-yellow-900 text-yellow-300' :
+                                                  slave.connected ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-500'"
+                                          x-text="slave.profit_target_hit ? 'DONE' :
+                                                  slave.guardian_active ? 'GUARDIAN' :
+                                                  slave.suspended ? 'PAUSED' :
+                                                  slave.connected ? 'COPYING' : 'OFFLINE'">
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-right">
+                                    <span x-show="getSlaveLatency(slave.account)"
+                                          class="text-xs font-medium"
+                                          :class="getSlaveLatency(slave.account)?.total_latency_ms < 50 ? 'text-green-400' :
+                                                  getSlaveLatency(slave.account)?.total_latency_ms < 200 ? 'text-yellow-400' : 'text-red-400'"
+                                          x-text="getSlaveLatency(slave.account)?.total_latency_ms.toFixed(0) + 'ms'">
+                                    </span>
+                                    <span x-show="!getSlaveLatency(slave.account)" class="text-gray-600">—</span>
+                                </td>
+                                <td class="px-4 py-3 text-center" x-show="state.engine_running">
+                                    <div class="flex items-center justify-center gap-2">
+                                        <button @click.stop="toggleAccount(slave.account)"
+                                            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
+                                            :class="slave.suspended ? 'bg-gray-600' : 'bg-green-600'">
+                                            <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
+                                                  :class="slave.suspended ? 'translate-x-1' : 'translate-x-[18px]'"></span>
+                                        </button>
+                                        <template x-if="slave.guardian_active">
+                                            <button @click="resetGuardian(slave.account)"
+                                                class="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-medium transition-colors">
+                                                Reset
+                                            </button>
+                                        </template>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <!-- Drawdown Card -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">Drawdown</h3>
+                    <p class="text-3xl font-bold"
+                       :class="(state.drawdown?.current_pct || 0) < 2 ? 'text-green-400' : (state.drawdown?.current_pct || 0) < 4 ? 'text-yellow-400' : 'text-red-400'"
+                       x-text="(state.drawdown?.current_pct?.toFixed(2) || '0.00') + '%'"></p>
+                    <div class="mt-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Max Drawdown</span>
+                            <span class="text-white" x-text="(state.drawdown?.max_pct?.toFixed(2) || '0.00') + '%'"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Peak Equity</span>
+                            <span class="text-white" x-text="'$' + (state.drawdown?.peak_equity?.toFixed(2) || '0.00')"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session Summary Card -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">Today's Session</h3>
+                    <p class="text-3xl font-bold"
+                       :class="sessionStats.pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                       x-text="(sessionStats.pnl >= 0 ? '+$' : '-$') + Math.abs(sessionStats.pnl).toFixed(2)"></p>
+                    <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <span class="text-gray-500">Trades</span>
+                            <p class="text-white" x-text="sessionStats.wins + 'W / ' + sessionStats.losses + 'L'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Win Rate</span>
+                            <p :class="sessionStats.winRate >= 50 ? 'text-green-400' : 'text-red-400'"
+                               x-text="sessionStats.winRate.toFixed(1) + '%'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Avg Latency</span>
+                            <p class="text-purple-400" x-text="sessionStats.avgLatency ? sessionStats.avgLatency.toFixed(0) + 'ms' : '-'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Count</span>
+                            <p class="text-white" x-text="sessionStats.count"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Trades -->
+            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                <h3 class="text-sm font-medium text-gray-400 mb-3">Recent Activity</h3>
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                    <template x-for="trade in (state.recent_trades || []).slice().reverse()" :key="trade.time">
+                        <div class="flex items-center gap-3 text-sm py-1 border-b border-gray-700/50">
+                            <span class="px-2 py-0.5 rounded text-xs font-medium"
+                                  :class="trade.type === 'opened' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'"
+                                  x-text="trade.type"></span>
+                            <span class="text-gray-300" x-text="trade.symbol || ''"></span>
+                            <span class="text-gray-500" x-text="'Follower: ' + trade.slave_account"></span>
+                            <template x-if="trade.type === 'opened' && trade.total_latency_ms">
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-purple-900 text-purple-300" x-text="'+' + trade.total_latency_ms.toFixed(0) + 'ms'"></span>
+                            </template>
+                            <template x-if="trade.type === 'closed' && trade.profit !== undefined">
+                                <span class="px-1.5 py-0.5 rounded text-xs font-medium"
+                                      :class="trade.profit >= 0 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'"
+                                      x-text="(trade.profit >= 0 ? '+$' : '-$') + Math.abs(trade.profit).toFixed(2)"></span>
+                            </template>
+                            <span class="text-gray-600 text-xs ml-auto" x-text="new Date(trade.time * 1000).toLocaleTimeString()"></span>
+                        </div>
+                    </template>
+                    <p x-show="!(state.recent_trades || []).length" class="text-gray-600 text-sm">No recent activity</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- POSITIONS TAB -->
+        <div x-show="activeTab === 'Positions'" x-cloak>
+            <div class="bg-dark-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-dark-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-gray-400 font-medium">Ticket</th>
+                            <th class="px-4 py-3 text-left text-gray-400 font-medium">Symbol</th>
+                            <th class="px-4 py-3 text-left text-gray-400 font-medium">Type</th>
+                            <th class="px-4 py-3 text-right text-gray-400 font-medium">Volume</th>
+                            <th class="px-4 py-3 text-right text-gray-400 font-medium">Open Price</th>
+                            <th class="px-4 py-3 text-right text-gray-400 font-medium">SL</th>
+                            <th class="px-4 py-3 text-right text-gray-400 font-medium">TP</th>
+                            <th class="px-4 py-3 text-right text-gray-400 font-medium">Profit</th>
+                            <th x-show="setups.length" class="px-4 py-3 text-left text-gray-400 font-medium">Setup</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="pos in state.positions || []" :key="pos.ticket">
+                            <tr class="border-t border-gray-700/50 hover:bg-dark-700/50 cursor-pointer"
+                                @click="togglePosition(pos.ticket)">
+                                <td class="px-4 py-2 font-mono">
+                                    <span class="inline-flex items-center gap-1">
+                                        <span class="text-xs text-gray-600" x-text="expandedPositions.includes(pos.ticket) ? '&#9660;' : '&#9654;'" x-show="state.trade_map?.[String(pos.ticket)]?.length"></span>
+                                        <span x-text="pos.ticket"></span>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2" x-text="pos.symbol"></td>
+                                <td class="px-4 py-2">
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium"
+                                          :class="pos.type === 'BUY' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'"
+                                          x-text="pos.type"></span>
+                                </td>
+                                <td class="px-4 py-2 text-right" x-text="pos.volume"></td>
+                                <td class="px-4 py-2 text-right font-mono" x-text="pos.open_price"></td>
+                                <td class="px-4 py-2 text-right font-mono" x-text="pos.sl || '-'"></td>
+                                <td class="px-4 py-2 text-right font-mono" x-text="pos.tp || '-'"></td>
+                                <td class="px-4 py-2 text-right font-mono font-medium"
+                                    :class="pos.profit >= 0 ? 'text-green-400' : 'text-red-400'"
+                                    x-text="(pos.profit >= 0 ? '+' : '') + pos.profit?.toFixed(2)"></td>
+                                <td x-show="setups.length" class="px-4 py-2" @click.stop>
+                                    <div class="flex gap-1">
+                                        <template x-for="s in setups" :key="s">
+                                            <button @click="tagSetup(pos.ticket, pos.setup === s ? null : s)"
+                                                class="px-2 py-0.5 rounded text-xs transition-colors"
+                                                :class="pos.setup === s ? 'bg-purple-600 text-white' : 'bg-dark-700 text-gray-500 hover:text-white'"
+                                                x-text="s"></button>
+                                        </template>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                        <!-- Expanded slave copies sub-rows (rendered separately to avoid nesting template issues) -->
+                        <template x-for="pos in (state.positions || []).filter(p => expandedPositions.includes(p.ticket) && state.trade_map?.[String(p.ticket)]?.length)" :key="'exp-' + pos.ticket">
+                            <template x-for="copy in state.trade_map[String(pos.ticket)]" :key="copy.slave_ticket">
+                                <tr class="bg-dark-700/30 border-t border-gray-700/30 text-xs text-gray-400">
+                                    <td class="px-4 py-1.5 pl-10 font-mono" x-text="copy.slave_ticket"></td>
+                                    <td class="px-4 py-1.5 text-gray-500">follower copy</td>
+                                    <td class="px-4 py-1.5" x-text="'Acct: ' + copy.slave_account"></td>
+                                    <td class="px-4 py-1.5 text-right" x-text="(() => { const l = (state.copy_latency || []).find(c => c.slave_ticket === copy.slave_ticket); return l ? l.slave_fill_price : '-'; })()"></td>
+                                    <td class="px-4 py-1.5 text-right" x-text="(() => { const l = (state.copy_latency || []).find(c => c.slave_ticket === copy.slave_ticket); return l ? l.slippage_points.toFixed(2) + ' pts' : '-'; })()"></td>
+                                    <td class="px-4 py-1.5"></td>
+                                    <td class="px-4 py-1.5"></td>
+                                    <td class="px-4 py-1.5 text-right text-purple-400" x-text="(() => { const l = (state.copy_latency || []).find(c => c.slave_ticket === copy.slave_ticket); return l ? (l.total_latency_ms || l.latency_ms || 0).toFixed(0) + 'ms' : '-'; })()"></td>
+                                    <td x-show="setups.length" class="px-4 py-1.5"></td>
+                                </tr>
+                            </template>
+                        </template>
+                    </tbody>
+                </table>
+                <p x-show="!(state.positions || []).length" class="text-gray-600 text-sm text-center py-8">No open positions</p>
+            </div>
+        </div>
+
+        <!-- HISTORY TAB -->
+        <div x-show="activeTab === 'History'" x-cloak>
+            <!-- Filter Bar -->
+            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 mb-4">
+                <div class="flex flex-wrap items-end gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">From</label>
+                        <input type="date" x-model="historyFilters.dateFrom"
+                               class="bg-dark-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">To</label>
+                        <input type="date" x-model="historyFilters.dateTo"
+                               class="bg-dark-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Symbol</label>
+                        <select x-model="historyFilters.symbol"
+                                class="bg-dark-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            <option value="">All</option>
+                            <template x-for="sym in historySymbols" :key="sym">
+                                <option :value="sym" x-text="sym"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <button @click="historyFilters = { dateFrom: '', dateTo: '', symbol: '' }"
+                            class="px-3 py-1.5 bg-dark-700 border border-gray-600 text-gray-400 hover:text-white rounded text-sm transition-colors">
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- Summary Bar -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" x-show="filteredClosedTrades.length">
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                    <p class="text-xs text-gray-500">Total PnL</p>
+                    <p class="text-lg font-bold" :class="historySummary.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                       x-text="(historySummary.total_pnl >= 0 ? '+$' : '-$') + Math.abs(historySummary.total_pnl).toFixed(2)"></p>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                    <p class="text-xs text-gray-500">Trades</p>
+                    <p class="text-lg font-bold text-white" x-text="historySummary.count"></p>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                    <p class="text-xs text-gray-500">Win Rate</p>
+                    <p class="text-lg font-bold" :class="historySummary.win_rate >= 50 ? 'text-green-400' : 'text-red-400'"
+                       x-text="historySummary.win_rate.toFixed(1) + '%'"></p>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                    <p class="text-xs text-gray-500">Avg PnL</p>
+                    <p class="text-lg font-bold" :class="historySummary.avg_pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                       x-text="(historySummary.avg_pnl >= 0 ? '+$' : '-$') + Math.abs(historySummary.avg_pnl).toFixed(2)"></p>
+                </div>
+            </div>
+
+            <div class="flex justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <button x-show="selectedTrades.length > 0" @click="exportSelectedTrades()"
+                            class="px-4 py-2 bg-dark-700 hover:bg-dark-800 border border-gray-600 text-white text-sm rounded transition-colors">
+                        Export <span x-text="selectedTrades.length"></span>
+                    </button>
+                    <button x-show="selectedTrades.length > 0" @click="showDeleteModal = true"
+                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors">
+                        Delete <span x-text="selectedTrades.length"></span>
+                    </button>
+                    <span x-show="selectedTrades.length > 0" class="text-xs text-gray-500" x-text="'Selected: ' + selectedTrades.length + ' / ' + filteredClosedTrades.length"></span>
+                </div>
+                <a href="/api/analytics/csv" class="px-4 py-2 bg-dark-700 hover:bg-dark-800 border border-gray-600 text-sm rounded transition-colors">
+                    Download CSV
+                </a>
+            </div>
+            <div class="bg-dark-800 rounded-lg border border-gray-700 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-dark-700">
+                        <tr>
+                            <th class="px-3 py-3 text-center w-10">
+                                <input type="checkbox" @change="toggleAllTrades($event.target.checked)"
+                                       :checked="selectedTrades.length === filteredClosedTrades.length && filteredClosedTrades.length > 0"
+                                       class="rounded bg-dark-900 border-gray-600">
+                            </th>
+                            <th class="px-3 py-3 text-left text-gray-400 font-medium">Ticket</th>
+                            <th class="px-3 py-3 text-left text-gray-400 font-medium">Symbol</th>
+                            <th class="px-3 py-3 text-left text-gray-400 font-medium">Type</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">Volume</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">Open</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">Close</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">PnL</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">MFE</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">MAE</th>
+                            <th class="px-3 py-3 text-right text-gray-400 font-medium">Duration</th>
+                            <th x-show="setups.length" class="px-3 py-3 text-left text-gray-400 font-medium">Setup</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="trade in filteredClosedTrades.slice().reverse()" :key="trade.ticket">
+                            <tr class="border-t border-gray-700/50 hover:bg-dark-700/50"
+                                :class="selectedTrades.includes(trade.ticket) ? 'bg-red-900/20' : ''">
+                                <td class="px-3 py-2 text-center">
+                                    <input type="checkbox" :value="trade.ticket"
+                                           :checked="selectedTrades.includes(trade.ticket)"
+                                           @change="toggleTrade(trade.ticket)"
+                                           class="rounded bg-dark-900 border-gray-600">
+                                </td>
+                                <td class="px-3 py-2 font-mono" x-text="trade.ticket"></td>
+                                <td class="px-3 py-2" x-text="trade.symbol"></td>
+                                <td class="px-3 py-2">
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium"
+                                          :class="trade.type === 0 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'"
+                                          x-text="trade.type === 0 ? 'BUY' : 'SELL'"></span>
+                                </td>
+                                <td class="px-3 py-2 text-right" x-text="trade.volume"></td>
+                                <td class="px-3 py-2 text-right font-mono" x-text="trade.open_price"></td>
+                                <td class="px-3 py-2 text-right font-mono" x-text="trade.close_price"></td>
+                                <td class="px-3 py-2 text-right font-mono font-medium"
+                                    :class="trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                                    x-text="(trade.pnl >= 0 ? '+' : '') + trade.pnl?.toFixed(2)"></td>
+                                <td class="px-3 py-2 text-right font-mono text-green-400" x-text="trade.mfe?.toFixed(2)"></td>
+                                <td class="px-3 py-2 text-right font-mono text-red-400" x-text="trade.mae?.toFixed(2)"></td>
+                                <td class="px-3 py-2 text-right text-gray-400" x-text="formatDuration(trade.duration_seconds)"></td>
+                                <td x-show="setups.length" class="px-3 py-1.5">
+                                    <select @change="trade.setup = $event.target.value || null; tagSetup(trade.ticket, trade.setup)"
+                                        class="bg-dark-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-blue-500 focus:outline-none">
+                                        <option value="">--</option>
+                                        <template x-for="s in setups" :key="s">
+                                            <option :value="s" :selected="trade.setup === s" x-text="s"></option>
+                                        </template>
+                                    </select>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <p x-show="!filteredClosedTrades.length" class="text-gray-600 text-sm text-center py-8" x-text="closedTrades.length ? 'No trades match filters' : 'No closed trades'"></p>
+            </div>
+        </div>
+
+        <!-- ANALYTICS TAB -->
+        <div x-show="activeTab === 'Analytics'" x-cloak>
+            <!-- Sub-tab Navigation -->
+            <div class="flex flex-wrap items-center gap-1 mb-6 border-b border-gray-700 pb-2">
+                <template x-for="sub in [
+                    {name: 'Overview', desc: 'KPIs, equity curve, PnL distribution, rolling windows'},
+                    {name: 'Entry & Exit', desc: 'Entry/exit timing, exit efficiency, trade duration vs outcome'},
+                    {name: 'Risk', desc: 'SL/TP hit distribution, risk-reward analysis, what-if scenarios'},
+                    {name: 'Patterns', desc: 'Session heatmap, win/loss streaks, position size vs performance'},
+                    {name: 'Copy Quality', desc: 'Slippage distribution, latency histogram, copy execution quality'},
+                ]" :key="sub.name">
+                    <button @click="analyticsSubTab = sub.name"
+                        class="px-3 py-1.5 text-xs rounded-t transition-colors"
+                        :class="analyticsSubTab === sub.name ? 'bg-blue-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'"
+                        :title="sub.desc">
+                        <span x-text="sub.name"></span>
+                    </button>
+                </template>
+
+                <!-- Setup Filter Pills -->
+                <div x-show="setups.length" class="ml-4 flex gap-1 items-center">
+                    <span class="text-xs text-gray-500 mr-1">Setup:</span>
+                    <button @click="setupFilter = null"
+                        class="px-2 py-0.5 rounded text-xs transition-colors"
+                        :class="!setupFilter ? 'bg-purple-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'">
+                        All
+                    </button>
+                    <template x-for="s in setups" :key="s">
+                        <button @click="setupFilter = s"
+                            class="px-2 py-0.5 rounded text-xs transition-colors"
+                            :class="setupFilter === s ? 'bg-purple-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'"
+                            x-text="s"></button>
+                    </template>
+                </div>
+
+                <button @click="fetchInsights()" class="ml-auto px-3 py-1.5 text-xs bg-dark-700 text-gray-400 hover:text-white rounded transition-colors">
+                    Refresh
+                </button>
+            </div>
+
+            <!-- ── Overview Sub-tab ── -->
+            <div x-show="analyticsSubTab === 'Overview'">
+                <!-- Row 1: Core KPIs -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" x-show="insights?.summary">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Total Trades</p>
+                        <p class="text-2xl font-bold text-white" x-text="insights?.summary?.total_trades || 0"></p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Win Rate</p>
+                        <p class="text-2xl font-bold"
+                           :class="(insights?.summary?.win_rate || 0) >= 0.5 ? 'text-green-400' : 'text-red-400'"
+                           x-text="((insights?.summary?.win_rate || 0) * 100).toFixed(1) + '%'"></p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Expectancy</p>
+                        <p class="text-2xl font-bold"
+                           :class="(insights?.summary?.expectancy || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+                           x-text="'$' + (insights?.summary?.expectancy || 0).toFixed(2)"></p>
+                        <p class="text-xs text-gray-600 mt-1">per trade</p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Profit Factor</p>
+                        <p class="text-2xl font-bold"
+                           :class="(insights?.summary?.profit_factor || 0) >= 1.5 ? 'text-green-400' : (insights?.summary?.profit_factor || 0) >= 1.0 ? 'text-yellow-400' : 'text-red-400'"
+                           x-text="insights?.summary?.profit_factor >= 9999 ? '∞' : (insights?.summary?.profit_factor || 0).toFixed(2)"></p>
+                        <p class="text-xs text-gray-600 mt-1" x-text="(insights?.summary?.profit_factor || 0) >= 1.5 ? 'Strong' : (insights?.summary?.profit_factor || 0) >= 1.0 ? 'Marginal' : 'Losing'"></p>
+                    </div>
+                </div>
+
+                <!-- Row 2: Edge & Consistency -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" x-show="insights?.summary">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Exit Efficiency</p>
+                        <p class="text-2xl font-bold text-blue-400"
+                           x-text="((insights?.summary?.avg_exit_efficiency || 0) * 100).toFixed(0) + '%'"></p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Avg PnL</p>
+                        <p class="text-2xl font-bold"
+                           :class="(insights?.summary?.avg_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+                           x-text="'$' + (insights?.summary?.avg_pnl || 0).toFixed(2)"></p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Consistency</p>
+                        <p class="text-2xl font-bold"
+                           :class="(insights?.summary?.consistency_top_pct || 0) <= 0.5 ? 'text-green-400' : (insights?.summary?.consistency_top_pct || 0) <= 0.7 ? 'text-yellow-400' : 'text-red-400'"
+                           x-text="((insights?.summary?.consistency_top_pct || 0) * 100).toFixed(0) + '%'"></p>
+                        <p class="text-xs text-gray-600 mt-1" x-text="'Top ' + (insights?.summary?.consistency_top_n || 0) + ' trades = this % of profit'"></p>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Max DD Duration</p>
+                        <p class="text-2xl font-bold text-orange-400"
+                           x-text="insights?.drawdown_duration?.max_duration_seconds ? formatDuration(insights.drawdown_duration.max_duration_seconds) : '-'"></p>
+                        <p class="text-xs text-red-400 mt-1" x-show="insights?.drawdown_duration?.current" x-text="'In drawdown: $' + (insights?.drawdown_duration?.current?.depth || 0).toFixed(2)"></p>
+                    </div>
+                </div>
+
+                <!-- Row 3: Rolling Performance Windows -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" x-show="insights?.rolling?.windows && Object.keys(insights.rolling.windows).length">
+                    <template x-for="label in ['7d', '30d', '90d']" :key="label">
+                        <div class="bg-dark-800 rounded-lg border border-gray-700 p-4" x-show="insights?.rolling?.windows?.[label]">
+                            <h4 class="text-xs font-medium text-gray-500 mb-3 text-center" x-text="'Last ' + label.toUpperCase()"></h4>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                    <span class="text-gray-500">Trades</span>
+                                    <p class="text-white font-medium" x-text="insights?.rolling?.windows?.[label]?.trades || 0"></p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">PnL</span>
+                                    <p class="font-medium"
+                                       :class="(insights?.rolling?.windows?.[label]?.total_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+                                       x-text="'$' + (insights?.rolling?.windows?.[label]?.total_pnl || 0).toFixed(2)"></p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Win Rate</span>
+                                    <p class="font-medium"
+                                       :class="(insights?.rolling?.windows?.[label]?.win_rate || 0) >= 0.5 ? 'text-green-400' : 'text-red-400'"
+                                       x-text="((insights?.rolling?.windows?.[label]?.win_rate || 0) * 100).toFixed(1) + '%'"></p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Expectancy</span>
+                                    <p class="font-medium"
+                                       :class="(insights?.rolling?.windows?.[label]?.expectancy || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+                                       x-text="'$' + (insights?.rolling?.windows?.[label]?.expectancy || 0).toFixed(2)"></p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Profit Factor</span>
+                                    <p class="font-medium"
+                                       :class="(insights?.rolling?.windows?.[label]?.profit_factor || 0) >= 1.5 ? 'text-green-400' : (insights?.rolling?.windows?.[label]?.profit_factor || 0) >= 1.0 ? 'text-yellow-400' : 'text-red-400'"
+                                       x-text="insights?.rolling?.windows?.[label]?.profit_factor >= 9999 ? '∞' : (insights?.rolling?.windows?.[label]?.profit_factor || 0).toFixed(2)"></p>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Exit Eff</span>
+                                    <p class="text-blue-400 font-medium"
+                                       x-text="((insights?.rolling?.windows?.[label]?.avg_exit_efficiency || 0) * 100).toFixed(0) + '%'"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <h3 class="text-sm font-medium text-gray-400 mb-4">Equity Curve</h3>
+                        <canvas id="equityChart" height="200"></canvas>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <h3 class="text-sm font-medium text-gray-400 mb-4">PnL Distribution</h3>
+                        <canvas id="pnlChart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Entry & Exit Sub-tab ── -->
+            <div x-show="analyticsSubTab === 'Entry & Exit'">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <div style="height: 280px;"><canvas id="entryTimingChart"></canvas></div>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <div style="height: 280px;"><canvas id="exitTimingChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <div style="height: 300px;"><canvas id="exitEfficiencyChart"></canvas></div>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <div style="height: 300px;"><canvas id="durationOutcomeChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Risk Sub-tab ── -->
+            <div x-show="analyticsSubTab === 'Risk'">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <div style="height: 280px;"><canvas id="exitDistChart"></canvas></div>
+                    </div>
+                    <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                        <!-- R:R Summary Cards -->
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="text-center">
+                                <p class="text-xs text-gray-500">Avg Planned R:R</p>
+                                <p class="text-xl font-bold text-blue-400" x-text="insights?.risk_reward?.avg_planned || '-'"></p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-xs text-gray-500">Avg Realized R:R</p>
+                                <p class="text-xl font-bold"
+                                   :class="(insights?.risk_reward?.avg_realized || 0) >= 0 ? 'text-green-400' : 'text-red-400'"
+                                   x-text="insights?.risk_reward?.avg_realized || '-'"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 mb-6">
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
+                        <span class="text-xs text-gray-500">If held longer:</span>
+                        <template x-for="iv in ['exit_1m', 'exit_5m', 'exit_15m', 'exit_30m']" :key="iv">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" :value="iv"
+                                       :checked="rrPotentialIntervals.includes(iv)"
+                                       @change="
+                                           if ($event.target.checked) {
+                                               rrPotentialIntervals = [...rrPotentialIntervals, iv];
+                                           } else {
+                                               rrPotentialIntervals = rrPotentialIntervals.filter(x => x !== iv);
+                                           }
+                                       "
+                                       class="rounded border-gray-600 bg-dark-900 text-blue-500 focus:ring-0 focus:ring-offset-0">
+                                <span class="text-xs" :class="{
+                                    'text-yellow-400': iv === 'exit_1m',
+                                    'text-orange-400': iv === 'exit_5m',
+                                    'text-pink-400': iv === 'exit_15m',
+                                    'text-purple-400': iv === 'exit_30m',
+                                }" x-text="'+' + iv.replace('exit_', '')"></span>
+                            </label>
+                        </template>
+                        <span class="text-xs text-gray-500 ml-2">If entered at:</span>
+                        <template x-for="iv in ['entry_-5m', 'entry_-1m', 'entry_-30s', 'entry_+30s', 'entry_+1m', 'entry_+5m']" :key="iv">
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" :value="iv"
+                                       :checked="rrPotentialIntervals.includes(iv)"
+                                       @change="
+                                           if ($event.target.checked) {
+                                               rrPotentialIntervals = [...rrPotentialIntervals, iv];
+                                           } else {
+                                               rrPotentialIntervals = rrPotentialIntervals.filter(x => x !== iv);
+                                           }
+                                       "
+                                       class="rounded border-gray-600 bg-dark-900 text-blue-500 focus:ring-0 focus:ring-offset-0">
+                                <span class="text-xs" :class="{
+                                    'text-cyan-400': iv === 'entry_-5m',
+                                    'text-sky-400': iv === 'entry_-1m',
+                                    'text-indigo-400': iv === 'entry_-30s',
+                                    'text-violet-400': iv === 'entry_+30s',
+                                    'text-purple-400': iv === 'entry_+1m',
+                                    'text-fuchsia-400': iv === 'entry_+5m',
+                                }" x-text="iv.replace('entry_', '')"></span>
+                            </label>
+                        </template>
+                    </div>
+                    <div style="height: 280px;"><canvas id="riskRewardLineChart"></canvas></div>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                    <div style="height: 280px;"><canvas id="riskRewardBarChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- ── Patterns Sub-tab ── -->
+            <div x-show="analyticsSubTab === 'Patterns'">
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 mb-6">
+                    <h3 class="text-sm font-medium text-gray-400 mb-2">Session Heatmap (UTC) — cell = trade count, color = avg PnL</h3>
+                    <canvas id="sessionHeatmap" height="200"></canvas>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 mb-6">
+                    <div style="height: 280px;"><canvas id="streakChart"></canvas></div>
+                </div>
+                <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                    <div style="height: 300px;"><canvas id="sizePerformanceChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- ── Copy Quality Sub-tab ── -->
+            <div x-show="analyticsSubTab === 'Copy Quality'">
+                <template x-if="insights?.copy_quality?.records?.length > 0">
+                    <div>
+                        <!-- Summary Cards -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Copies</p>
+                                <p class="text-2xl font-bold text-white" x-text="insights?.copy_quality?.summary?.count || 0"></p>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Avg Slippage</p>
+                                <p class="text-2xl font-bold text-yellow-400" x-text="(insights?.copy_quality?.summary?.avg_slippage || 0).toFixed(2) + ' pts'"></p>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Max Slippage</p>
+                                <p class="text-2xl font-bold text-red-400" x-text="(insights?.copy_quality?.summary?.max_slippage || 0).toFixed(2) + ' pts'"></p>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Avg Total Latency</p>
+                                <p class="text-2xl font-bold text-purple-400" x-text="(insights?.copy_quality?.summary?.avg_total_latency_ms || 0).toFixed(0) + 'ms'"></p>
+                            </div>
+                        </div>
+                        <!-- Latency Breakdown -->
+                        <div class="grid grid-cols-3 gap-4 mb-6">
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Avg True Latency</p>
+                                <p class="text-lg font-bold text-blue-400" x-text="(insights?.copy_quality?.summary?.avg_true_latency_ms || 0).toFixed(0) + 'ms'"></p>
+                                <p class="text-xs text-gray-600">detect + queue</p>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Avg Server Latency</p>
+                                <p class="text-lg font-bold text-green-400" x-text="(insights?.copy_quality?.summary?.avg_server_latency_ms || 0).toFixed(0) + 'ms'"></p>
+                                <p class="text-xs text-gray-600">broker fill</p>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-3 text-center">
+                                <p class="text-xs text-gray-500 mb-1">Max Total Latency</p>
+                                <p class="text-lg font-bold text-red-400" x-text="(insights?.copy_quality?.summary?.max_total_latency_ms || 0).toFixed(0) + 'ms'"></p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                                <div style="height: 260px;"><canvas id="slippageHistChart"></canvas></div>
+                            </div>
+                            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                                <div style="height: 260px;"><canvas id="slippagePnlChart"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="bg-dark-800 rounded-lg border border-gray-700 p-4">
+                            <div style="height: 260px;"><canvas id="latencyHistChart"></canvas></div>
+                        </div>
+                    </div>
+                </template>
+                <p x-show="!insights?.copy_quality?.records?.length" class="text-gray-600 text-sm text-center py-8">No copy latency data yet — start the engine and make some trades</p>
+            </div>
+        </div>
+
+        <!-- CONFIG TAB -->
+        <div x-show="activeTab === 'Config'" x-cloak>
+            <div class="space-y-6" x-data="configForm()" x-init="loadConfig()">
+
+                <!-- Accounts Library -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700">
+                    <button @click="showAccounts = !showAccounts" class="w-full px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-medium text-gray-400">Saved Accounts</h3>
+                        <span class="text-gray-500" x-text="showAccounts ? '\u2212' : '+'"></span>
+                    </button>
+                    <div x-show="showAccounts" class="px-4 pb-4">
+                    <div class="flex justify-end mb-4">
+                        <button @click="openNewAccount()"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors">
+                            + Add Account
+                        </button>
+                    </div>
+
+                    <!-- Account List -->
+                    <div class="space-y-2" x-show="accounts.length">
+                        <template x-for="(acct, idx) in accounts" :key="acct.tag">
+                            <div class="flex items-center justify-between bg-dark-900 rounded px-4 py-2 border border-gray-700">
+                                <div class="flex items-center gap-4 text-sm min-w-0">
+                                    <span class="text-white font-medium truncate" x-text="acct.tag"></span>
+                                    <span class="px-1.5 py-0.5 rounded text-xs font-medium"
+                                          :class="acct.platform === 'mt4' ? 'bg-amber-900 text-amber-300' : 'bg-blue-900 text-blue-300'"
+                                          x-text="(acct.platform || 'mt5').toUpperCase()"></span>
+                                    <span class="text-gray-500 text-xs" x-text="acct.account + ' @ ' + acct.server"></span>
+                                    <span class="text-gray-600 text-xs truncate hidden lg:inline" x-text="acct.platform === 'mt4' ? ('port ' + (acct.mt4_port || 15555)) : acct.mt5_path"></span>
+                                </div>
+                                <div class="flex items-center gap-2 ml-2 shrink-0">
+                                    <button @click="openEditAccount(acct)" class="text-blue-400 hover:text-blue-300 text-xs">Edit</button>
+                                    <button @click="deleteAccount(acct.tag)" class="text-red-500 hover:text-red-400 text-xs">Delete</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <p x-show="!accounts.length && !editingAccount" class="text-gray-600 text-sm text-center py-4">No saved accounts. Add one to get started.</p>
+
+                    <!-- Inline Edit/Add Form -->
+                    <template x-if="editingAccount">
+                    <div x-transition class="mt-3 bg-dark-900 rounded-lg border border-blue-500/50 p-4">
+                        <h4 class="text-xs text-blue-400 mb-3" x-text="editingAccount._isNew ? 'New Account' : 'Edit Account'"></h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Tag (label)</label>
+                                <input type="text" x-model="editingAccount.tag" placeholder="e.g. My Account"
+                                       class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Account Number</label>
+                                <input type="number" x-model.number="editingAccount.account"
+                                       class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Password</label>
+                                <div class="relative">
+                                    <input :type="showEditPw ? 'text' : 'password'" x-model="editingAccount.password"
+                                           class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none pr-10">
+                                    <button @click="showEditPw = !showEditPw" class="absolute right-2 top-2 text-gray-500 hover:text-gray-300 text-xs">
+                                        <span x-text="showEditPw ? 'Hide' : 'Show'"></span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Server</label>
+                                <input type="text" x-model="editingAccount.server"
+                                       class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Platform</label>
+                                <select x-model="editingAccount.platform"
+                                        class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                                    <option value="mt5">MT5</option>
+                                    <option value="mt4">MT4</option>
+                                </select>
+                            </div>
+                            <div x-show="editingAccount?.platform !== 'mt4'">
+                                <label class="block text-xs text-gray-500 mb-1">MT5 Path</label>
+                                <input type="text" x-model="editingAccount.mt5_path"
+                                       class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                            <div x-show="editingAccount?.platform === 'mt4'">
+                                <label class="block text-xs text-gray-500 mb-1">Bridge Port</label>
+                                <input type="number" x-model.number="editingAccount.mt4_port" placeholder="15555"
+                                       class="w-full bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            </div>
+                        </div>
+                        <div class="flex gap-2 mt-3">
+                            <button @click="saveAccount()"
+                                    class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors">
+                                Save Account
+                            </button>
+                            <button @click="cancelEdit()"
+                                    class="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs transition-colors">
+                                Cancel
+                            </button>
+                            <span x-show="accountsStatus" x-text="accountsStatus"
+                                  class="text-xs text-red-400 self-center" x-transition></span>
+                        </div>
+                    </div>
+                    </template>
+                    </div>
+                </div>
+
+                <!-- Master Account -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700">
+                    <button @click="showMaster = !showMaster" class="w-full px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-medium text-gray-400">Source Account</h3>
+                        <span class="text-gray-500" x-text="showMaster ? '\u2212' : '+'"></span>
+                    </button>
+                    <div x-show="showMaster" class="px-4 pb-4">
+                    <div>
+                        <select x-model="masterTag"
+                                class="w-full md:w-1/2 bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                            <option value="">-- Select account --</option>
+                            <template x-for="acct in accounts" :key="acct.tag">
+                                <option :value="acct.tag" x-text="'[' + (acct.platform || 'mt5').toUpperCase() + '] ' + acct.tag + ' (' + acct.account + ' @ ' + acct.server + ')'"></option>
+                            </template>
+                        </select>
+                        <p x-show="!accounts.length" class="text-xs text-gray-600 mt-2">Add accounts in Saved Accounts above first.</p>
+                    </div>
+                    </div>
+                </div>
+
+                <!-- Slave Accounts -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700">
+                    <button @click="showSlaves = !showSlaves" class="w-full px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-medium text-gray-400">Follower Accounts</h3>
+                        <span class="text-gray-500" x-text="showSlaves ? '\u2212' : '+'"></span>
+                    </button>
+                    <div x-show="showSlaves" class="px-4 pb-4">
+                    <div class="flex justify-end mb-4">
+                        <button @click="addSlave()"
+                                class="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs transition-colors">
+                            + Add Follower
+                        </button>
+                    </div>
+                    <div class="space-y-3">
+                        <template x-for="(slave, idx) in slaveTags" :key="idx">
+                            <div class="bg-dark-900 rounded-lg border border-gray-600 px-4 py-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs text-gray-500 shrink-0" x-text="'#' + (idx + 1)"></span>
+                                    <select x-model="slaveTags[idx].account_tag"
+                                            class="flex-1 bg-dark-800 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                                        <option value="">-- Select account --</option>
+                                        <template x-for="acct in accounts" :key="acct.tag">
+                                            <option :value="acct.tag" x-text="'[' + (acct.platform || 'mt5').toUpperCase() + '] ' + acct.tag + ' (' + acct.account + ' @ ' + acct.server + ')'"></option>
+                                        </template>
+                                    </select>
+                                    <div class="shrink-0">
+                                        <label class="block text-xs text-gray-500 mb-0.5">Scaler</label>
+                                        <input type="number" step="0.01" x-model.number="slaveTags[idx].size_scaler"
+                                               class="w-20 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                                    </div>
+                                    <div class="shrink-0">
+                                        <label class="block text-xs text-gray-500 mb-0.5">Max DD %</label>
+                                        <input type="number" step="0.1" min="0" x-model.number="slaveTags[idx].max_drawdown_pct"
+                                               placeholder="0=off"
+                                               class="w-20 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                                    </div>
+                                    <div class="shrink-0">
+                                        <label class="block text-xs text-gray-500 mb-0.5" title="Close all & disconnect when equity reaches this value (0 = off)">Profit Target $</label>
+                                        <input type="number" step="100" min="0" x-model.number="slaveTags[idx].profit_target_usd"
+                                               placeholder="0=off"
+                                               class="w-28 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                                    </div>
+                                    <div class="shrink-0">
+                                        <label class="block text-xs text-gray-500 mb-0.5" :title="slaveTags[idx].invert ? 'Disabled while Invert is on' : 'Follower SL/TP distance = multiplier × source distance. Use 1.5x to avoid prop-firm SL/TP hits from spread divergence.'">SL/TP ×</label>
+                                        <input type="number" step="0.1" min="1" x-model.number="slaveTags[idx].sltp_multiplier"
+                                               :disabled="slaveTags[idx].invert"
+                                               placeholder="1.0"
+                                               class="w-20 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40">
+                                    </div>
+                                    <button @click="slaveTags[idx].invert = !slaveTags[idx].invert"
+                                            class="text-xs shrink-0 px-2 py-1 rounded transition-colors"
+                                            :class="slaveTags[idx].invert ? 'text-orange-400 bg-orange-500/10' : 'text-gray-500 hover:text-gray-300'">
+                                        Invert
+                                    </button>
+                                    <button @click="slaveTags[idx]._showStagger = !slaveTags[idx]._showStagger"
+                                            class="text-xs shrink-0 px-2 py-1 rounded transition-colors"
+                                            :class="slaveTags[idx]._showStagger ? 'text-blue-400 bg-blue-500/10' : 'text-gray-500 hover:text-gray-300'">
+                                        Stagger
+                                    </button>
+                                    <button @click="removeSlave(idx)" class="text-red-500 hover:text-red-400 text-xs shrink-0">Remove</button>
+                                </div>
+                                <!-- Collapsible stagger options -->
+                                <div x-show="slaveTags[idx]._showStagger" x-cloak
+                                     class="mt-3 pt-3 border-t border-gray-700">
+                                    <div class="flex items-center gap-4 flex-wrap">
+                                        <span class="text-xs text-gray-500 shrink-0">Stagger:</span>
+                                        <div class="shrink-0">
+                                            <label class="block text-xs text-gray-500 mb-0.5">Price Offset (pts)</label>
+                                            <input type="number" step="1" x-model.number="slaveTags[idx].price_offset_points"
+                                                   placeholder="0=off"
+                                                   class="w-24 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed">
+                                        </div>
+                                        <div class="shrink-0" x-show="slaveTags[idx].price_offset_points != 0">
+                                            <label class="block text-xs text-gray-500 mb-0.5">Timeout (s)</label>
+                                            <input type="number" step="1" min="1" x-model.number="slaveTags[idx].price_offset_timeout"
+                                                   placeholder="20"
+                                                   class="w-20 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed">
+                                        </div>
+                                        <div class="shrink-0" x-show="slaveTags[idx].price_offset_points != 0">
+                                            <label class="block text-xs text-gray-500 mb-0.5">Max Adverse (pts)</label>
+                                            <input type="number" step="1" min="0" x-model.number="slaveTags[idx].price_offset_max_points"
+                                                   placeholder="0=no limit"
+                                                   class="w-24 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed">
+                                        </div>
+                                        <div class="shrink-0">
+                                            <label class="block text-xs text-gray-500 mb-0.5">Volume Jitter %</label>
+                                            <input type="number" step="1" min="0" x-model.number="slaveTags[idx].volume_jitter_pct"
+                                                   placeholder="0=off"
+                                                   class="w-24 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed">
+                                        </div>
+                                        <div class="shrink-0">
+                                            <label class="block text-xs text-gray-500 mb-0.5">SL/TP Offset (pts)</label>
+                                            <input type="number" step="1" min="0" x-model.number="slaveTags[idx].sltp_offset_points"
+                                                   placeholder="0=off"
+                                                   class="w-24 bg-dark-800 border border-gray-600 rounded px-2 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed">
+                                        </div>
+                                    </div>
+                                    <p x-show="slaveTags[idx].price_offset_points > 0" class="text-xs text-gray-600 mt-2">
+                                        Waits up to <span x-text="slaveTags[idx].price_offset_timeout"></span>s for price to improve by <span x-text="slaveTags[idx].price_offset_points"></span> pts.
+                                        <span x-show="slaveTags[idx].price_offset_max_points > 0">Skips copy if price moves against by more than <span x-text="slaveTags[idx].price_offset_max_points"></span> pts.</span>
+                                        <span x-show="!slaveTags[idx].price_offset_max_points">Fills at market on timeout.</span>
+                                    </p>
+                                    <p x-show="slaveTags[idx].price_offset_points < 0" class="text-xs text-gray-600 mt-2">
+                                        Slippage guard: fires immediately if price is within <span x-text="Math.abs(slaveTags[idx].price_offset_points)"></span> pts of master's entry. Waits up to <span x-text="slaveTags[idx].price_offset_timeout"></span>s otherwise.
+                                        <span x-show="slaveTags[idx].price_offset_max_points > 0">Skips copy if price exceeds <span x-text="slaveTags[idx].price_offset_max_points"></span> pts adverse.</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+                        <p x-show="!slaveTags.length" class="text-gray-600 text-sm text-center py-4">No follower accounts configured</p>
+                    </div>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700">
+                    <button @click="showSettings = !showSettings" class="w-full px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-medium text-gray-400">Settings</h3>
+                        <span class="text-gray-500" x-text="showSettings ? '\u2212' : '+'"></span>
+                    </button>
+                    <div x-show="showSettings" x-collapse class="px-4 pb-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Check Interval (s)</label>
+                            <input type="number" step="0.001" x-model.number="config.settings.check_interval"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Magic Number</label>
+                            <input type="number" x-model.number="config.settings.magic_number"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Max Deviation</label>
+                            <input type="number" x-model.number="config.settings.max_deviation"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Max Open Retries</label>
+                            <input type="number" x-model.number="config.settings.max_open_retries"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Max Close Retries</label>
+                            <input type="number" x-model.number="config.settings.max_close_retries"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Retry Delay (s)</label>
+                            <input type="number" step="0.001" x-model.number="config.settings.retry_delay"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Time Stagger Min (ms)</label>
+                            <input type="number" step="10" min="0" x-model.number="config.settings.stagger_ms_min"
+                                   placeholder="0=off"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Time Stagger Max (ms)</label>
+                            <input type="number" step="10" min="0" x-model.number="config.settings.stagger_ms_max"
+                                   placeholder="0=off"
+                                   class="w-full bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <!-- Setup Names -->
+                <div class="bg-dark-800 rounded-lg border border-gray-700">
+                    <button @click="showSetups = !showSetups" class="w-full px-4 py-3 flex justify-between items-center">
+                        <h3 class="text-sm font-medium text-gray-400">Setup Names (up to 4)</h3>
+                        <span class="text-gray-500" x-text="showSetups ? '\u2212' : '+'"></span>
+                    </button>
+                    <div x-show="showSetups" x-collapse class="px-4 pb-4">
+                    <div class="flex gap-2 flex-wrap">
+                        <template x-for="(s, i) in (config.settings.setups || [])" :key="i">
+                            <div class="flex items-center gap-1">
+                                <input type="text" x-model="config.settings.setups[i]"
+                                    class="w-32 bg-dark-900 border border-gray-600 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                                    placeholder="Setup name">
+                                <button @click="config.settings.setups.splice(i, 1)" class="text-red-400 hover:text-red-300 text-sm px-1">x</button>
+                            </div>
+                        </template>
+                        <button x-show="(config.settings.setups || []).length < 4"
+                            @click="if (!config.settings.setups) config.settings.setups = []; config.settings.setups.push('')"
+                            class="px-3 py-2 bg-dark-700 border border-gray-600 text-gray-400 hover:text-white rounded text-sm transition-colors">
+                            + Add Setup
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-2">Tag open positions with setups to track per-setup performance.</p>
+                    </div>
+                </div>
+
+                <!-- Save Button -->
+                <div class="flex gap-3">
+                    <button @click="saveConfig()"
+                            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm transition-colors">
+                        Save Configuration
+                    </button>
+                    <span x-show="saveStatus" x-text="saveStatus"
+                          class="text-sm self-center" :class="saveStatus === 'Saved!' ? 'text-green-400' : 'text-red-400'"
+                          x-transition></span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- LOGS TAB -->
+        <div x-show="activeTab === 'Logs'" x-cloak>
+            <div class="flex items-center gap-2 mb-4">
+                <template x-for="level in ['ALL', 'INFO', 'WARNING', 'ERROR']">
+                    <button @click="logFilter = level"
+                            class="px-3 py-1 text-xs rounded transition-colors"
+                            :class="logFilter === level ? 'bg-blue-600 text-white' : 'bg-dark-700 text-gray-400 hover:text-white'">
+                        <span x-text="level"></span>
+                    </button>
+                </template>
+                <input type="text" x-model="logSearch" placeholder="Search logs..."
+                       class="ml-auto bg-dark-800 border border-gray-600 rounded px-3 py-1 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none w-64">
+            </div>
+            <div class="bg-dark-800 rounded-lg border border-gray-700 p-4 font-mono text-xs max-h-[600px] overflow-y-auto" id="logContainer">
+                <template x-for="log in filteredLogs" :key="log.timestamp + log.message">
+                    <div class="py-0.5" :class="{
+                        'text-red-400': log.level === 'ERROR',
+                        'text-yellow-400': log.level === 'WARNING',
+                        'text-gray-300': log.level === 'INFO',
+                        'text-gray-500': log.level === 'DEBUG'
+                    }">
+                        <span x-text="log.message"></span>
+                    </div>
+                </template>
+                <p x-show="!filteredLogs.length" class="text-gray-600">No log entries</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Trades Confirmation Modal -->
+    <div x-show="showDeleteModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-dark-800 border border-gray-700 rounded-lg p-6 max-w-sm mx-4">
+            <h3 class="text-lg font-bold text-white mb-2">Delete Trades?</h3>
+            <p class="text-gray-400 text-sm mb-4">This will permanently remove <span class="text-red-400 font-medium" x-text="selectedTrades.length"></span> trade(s) from analytics. This cannot be undone.</p>
+            <div class="flex gap-3 justify-end">
+                <button @click="showDeleteModal = false" class="px-4 py-2 bg-dark-700 text-gray-300 rounded text-sm">Cancel</button>
+                <button @click="exportSelectedTrades(); showDeleteModal = false" class="px-4 py-2 bg-blue-600 text-white rounded text-sm">Export First</button>
+                <button @click="deleteTrades()" class="px-4 py-2 bg-red-600 text-white rounded text-sm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stop Confirmation Modal -->
+    <div x-show="showStopModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-dark-800 border border-gray-700 rounded-lg p-6 max-w-sm mx-4">
+            <h3 class="text-lg font-bold text-white mb-2">Stop Engine?</h3>
+            <p class="text-gray-400 text-sm mb-4">This will close all monitoring. Open positions on follower accounts will NOT be closed automatically.</p>
+            <div class="flex gap-3 justify-end">
+                <button @click="showStopModal = false" class="px-4 py-2 bg-dark-700 text-gray-300 rounded text-sm">Cancel</button>
+                <button @click="stopEngine()" class="px-4 py-2 bg-red-600 text-white rounded text-sm">Stop</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div x-show="toast.show" x-cloak x-transition
+         class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg text-sm z-50"
+         :class="toast.type === 'error' ? 'bg-red-900 text-red-200 border border-red-700' : 'bg-green-900 text-green-200 border border-green-700'">
+        <span x-text="toast.message"></span>
+    </div>
+
+    <script src="/static/js/app.js?v=5"></script>
+    <script src="/static/js/charts.js?v=5"></script>
+    <script src="/static/js/insights.js?v=5"></script>
+</body>
+</html>

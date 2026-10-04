@@ -1,0 +1,15 @@
+- tag: My 200k Account
+  account: 12345678
+  password: your_password
+  server: YourBroker-Server
+  mt5_path: C:\Program Files\MetaTrader 5
+  platform: mt5
+- tag: My 100k Account
+  account: 87654321
+  password: your_password
+  server: YourBroker-Server2
+  mt5_path: C:\Program Files\MetaTrader 5 Second
+  platform: mt5
+  # Optional: translate source symbol names to this broker's spelling
+  # symbol_map:
+  #   GER40.cash: DAX40
